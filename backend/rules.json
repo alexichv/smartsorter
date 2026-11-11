@@ -1,0 +1,66 @@
+{
+  "bacs": {
+    "jaune": {
+      "label": "Bac jaune",
+      "couleur": "#F5C400",
+      "valorise": true,
+      "description": "Emballages en plastique, métal et carton, briques alimentaires, papiers. Vides, inutile de les laver."
+    },
+    "verre": {
+      "label": "Bac à verre",
+      "couleur": "#2E8B57",
+      "valorise": true,
+      "description": "Bouteilles, bocaux et pots en verre, sans bouchon ni couvercle. Colonne à verre ou bac vert."
+    },
+    "compost": {
+      "label": "Bac à compost",
+      "couleur": "#7B5836",
+      "valorise": true,
+      "description": "Biodéchets : restes de repas, épluchures, marc de café, sachets de thé, petits déchets de jardin."
+    },
+    "ordures_menageres": {
+      "label": "Bac gris",
+      "couleur": "#6A747C",
+      "valorise": false,
+      "description": "Ordures ménagères résiduelles : ce qui ne se recycle pas (couches, mouchoirs usagés, vaisselle cassée, emballages très souillés)."
+    },
+    "point_collecte": {
+      "label": "Point de collecte",
+      "couleur": "#3B6FB6",
+      "valorise": true,
+      "description": "Piles, ampoules, appareils électriques, médicaments (pharmacie), textiles (borne dédiée), cartouches d'encre."
+    },
+    "decheterie": {
+      "label": "Déchèterie",
+      "couleur": "#8A5CA8",
+      "valorise": true,
+      "description": "Encombrants, gravats, peintures, solvants, déchets dangereux, gros électroménager."
+    }
+  },
+  "regles": [
+    "Depuis 2023, dans la plupart des communes, tous les emballages en plastique vont dans le bac jaune (pots de yaourt, barquettes, films, sacs). À vérifier selon la commune.",
+    "Les bouchons restent vissés sur les bouteilles en plastique, y compris en métal : ils sont recyclés avec la bouteille.",
+    "Verre : bouteilles, bocaux et pots uniquement, sans bouchon ni couvercle. Pas de vaisselle, verre de cuisson, miroirs ni ampoules.",
+    "Cartons propres et secs : bac jaune, aplatis. Un carton de pizza très gras ne se recycle pas (bac gris, ou compost si la commune l'accepte).",
+    "Papiers propres (journaux, magazines, courriers, enveloppes) : bac jaune. Papier souillé ou mouchoir usagé : bac gris.",
+    "Canettes, boîtes de conserve, aérosols vides, capsules et barquettes en aluminium : bac jaune.",
+    "Briques alimentaires (lait, jus) : bac jaune.",
+    "Biodéchets : le tri à la source est obligatoire depuis le 1er janvier 2024. Compost individuel, bac marron ou borne de quartier.",
+    "Piles, batteries, ampoules, petits appareils électriques : point de collecte en magasin ou déchèterie, jamais au bac.",
+    "Médicaments périmés : à rapporter en pharmacie. Textiles et chaussures : borne de collecte textile, même usés s'ils sont propres et secs.",
+    "Couches, lingettes, mouchoirs usagés, vaisselle cassée, mégots : bac gris.",
+    "Ne pas imbriquer les emballages les uns dans les autres. Bien vider, pas besoin de rincer."
+  ],
+  "impact_co2_g": {
+    "plastique": 70,
+    "verre": 40,
+    "carton": 50,
+    "papier": 40,
+    "metal": 150,
+    "organique": 30,
+    "textile": 100,
+    "electronique": 200,
+    "autre": 0
+  },
+  "_note": "impact_co2_g : ordres de grandeur indicatifs (g de CO2e évités par objet trié). A recouper avec ADEME / Citeo avant de les afficher en jury comme chiffres officiels."
+}

@@ -1,0 +1,41 @@
+@import "tailwindcss";
+
+@theme {
+  --font-display: "Bricolage Grotesque", ui-sans-serif, system-ui, sans-serif;
+  --font-sans: "Instrument Sans", ui-sans-serif, system-ui, sans-serif;
+  --color-paper: #edf0ee;
+  --color-ink: #14201b;
+  --color-pine: #0e6b5c;
+  --color-pine-dark: #0a5247;
+  --color-mist: #d3dbd7;
+}
+
+body {
+  background: var(--color-paper);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  line-height: 1.5;
+}
+
+/* Le couvercle du bac se soulève : confirme qu'un déchet vient d'être trié. */
+.bin-lid {
+  transform-box: view-box;
+  transform-origin: 8px 26px;
+  animation: lid-pop 0.9s ease-out 1;
+}
+.bin-lid.loop {
+  animation: lid-pop 1.2s ease-in-out infinite;
+}
+@keyframes lid-pop {
+  0% { transform: rotate(0); }
+  30%, 60% { transform: rotate(-26deg); }
+  100% { transform: rotate(0); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .bin-lid, .bin-lid.loop { animation: none; }
+}
+
+:focus-visible {
+  outline: 3px solid var(--color-pine);
+  outline-offset: 2px;
+}
