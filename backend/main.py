@@ -51,7 +51,8 @@ Format :
 Consignes :
 - Liste séparément chaque objet distinct visible (ex: bouteille ET bouchon si les gestes diffèrent).
 - {MAX_OBJETS} objets maximum, les plus visibles d'abord.
-- "recyclabilite" : part réellement recyclée si le geste est correct (verre propre ~100, barquette multicouche ~40, couche ou mouchoir 0).
+- Ne suppose jamais qu'un objet est souillé sans tache visible. Une feuille froissée avec de l'écriture est du papier propre (bac jaune), pas un mouchoir : un mouchoir usagé est un tissu fin et mou, souvent taché.
+- "recyclabilite" : part réellement recyclée si le geste est correct (verre propre ~100, feuille de pamier propre ~95, barquette multicouche ~40, couche ou mouchoir 0).
 - Si la photo ne montre aucun déchet identifiable, renvoie "objets": [] et explique en une phrase dans "message".
 - Sois bref : conseil et alternative tiennent en une phrase chacun.
 - Le verre transparent est difficile à voir : repère les reflets, le goulot, les bords, l'étiquette, le contenu. Un bocal ou une bouteille transparente vide est du verre, même s'il se distingue mal du fond.
@@ -182,8 +183,32 @@ OVERPASS_URLS = [
 ]
 RADII_M = (3000, 10000)  # on élargit automatiquement si rien à 3 km
 MAX_POINTS = 8
-GEO_TTL = 3600
+GEO_TTL = 86400  # les points de collecte changent peu ; Geoapify autorise le stockage des résultats
 GEO_MAX_PER_MIN = 20
+
+# Geoapify : même base OpenStreetMap, mais sur une infrastructure fiable (plan gratuit : 3000 crédits/jour).
+# Sans clé GEOAPIFY_API_KEY dans .env, l'appli utilise uniquement Overpass.
+GEOAPIFY_KEY = os.getenv("GEOAPIFY_API_KEY", "").strip()
+GEOAPIFY_URL = "https://api.geoapify.com/v2/places"
+# Plan gratuit : 3000 crédits/jour. On s'arrête à 2500 pour garder une marge, puis on bascule sur Overpass.
+GEOAPIFY_MAX_CREDITS_PER_DAY = int(os.getenv("GEOAPIFY_MAX_CREDITS_PER_DAY", "2500"))
+# type -> (catégorie Geoapify, étiquettes OSM dont l'une doit valoir "yes", ou None)
+GEOAPIFY_TYPES = {
+    "piles": ("service.recycling", ["recycling:batteries", "recycling:light_bulbs"]),
+    "electro": (
+        "service.recycling",
+        ["recycling:electrical_items", "recycling:small_appliances", "recycling:electrical_appliances"],
+    ),
+    "textile": ("service.recycling", ["recycling:clothes", "recycling:shoes"]),
+    "medicaments": ("healthcare.pharmacy", None),
+    "verre": ("service.recycling", ["recycling:glass_bottles", "recycling:glass"]),
+    "decheterie": ("service.recycling.centre", None),
+}
+_geoapify_daily = {"day": date.today().isoformat(), "count": 0}
+
+
+class GeoapifyError(Exception):
+    pass
 
 COLLECTE_TYPES = {
     "piles": {
@@ -223,6 +248,19 @@ COLLECTE_TYPES = {
         "fallback": "Déchèterie",
         "filters": ['["amenity"="recycling"]["recycling_type"="centre"]'],
     },
+}
+
+# Quand un type n'a aucun point dédié dans OpenStreetMap, on propose les déchèteries,
+# qui acceptent ces déchets (piles, ampoules, appareils électriques).
+FALLBACKS = {
+    "piles": (
+        "decheterie",
+        "Aucune borne dédiée trouvée près de toi. Les déchèteries acceptent les piles et les ampoules :",
+    ),
+    "electro": (
+        "decheterie",
+        "Aucun point dédié trouvé près de toi. Les déchèteries acceptent les appareils électriques :",
+    ),
 }
 
 _geo_hits: dict[str, deque] = defaultdict(deque)
@@ -299,22 +337,107 @@ def overpass(query: str) -> list[dict]:
     raise HTTPException(502, "Service de cartographie surchargé. Réessaie dans un instant.")
 
 
+def geoapify_budget_ok() -> bool:
+    today = date.today().isoformat()
+    if _geoapify_daily["day"] != today:
+        _geoapify_daily.update(day=today, count=0)
+    return _geoapify_daily["count"] < GEOAPIFY_MAX_CREDITS_PER_DAY
+
+
+def geoapify_query(kind: str, lat: float, lon: float, radius: int, limit: int) -> list[dict]:
+    """Un appel Geoapify, converti au même format que les éléments Overpass (lat, lon, tags)."""
+    category, tag_keys = GEOAPIFY_TYPES[kind]
+    r = httpx.get(
+        GEOAPIFY_URL,
+        params={
+            "categories": category,
+            "filter": f"circle:{lon},{lat},{radius}",  # longitude d'abord
+            "bias": f"proximity:{lon},{lat}",
+            "limit": limit,
+            "apiKey": GEOAPIFY_KEY,
+        },
+        timeout=httpx.Timeout(10, connect=4),
+    )
+    if r.status_code != 200:
+        _geoapify_daily["count"] += 1
+        raise GeoapifyError(f"HTTP {r.status_code}")  # jamais d'URL dans les messages : elle contient la clé
+
+    features = r.json().get("features", [])
+    # Tarif Geoapify : 1 crédit jusqu'à 20 résultats demandés, sinon 1 + 1 par tranche de 20 résultats renvoyés.
+    _geoapify_daily["count"] += 1 if limit <= 20 else 1 + math.ceil(len(features) / 20)
+
+    elements = []
+    for f in features:
+        p = f.get("properties") or {}
+        raw = (p.get("datasource") or {}).get("raw") or {}
+        if tag_keys and not any(raw.get(k) == "yes" for k in tag_keys):
+            continue
+        plat, plon = p.get("lat"), p.get("lon")
+        if plat is None or plon is None:
+            coords = (f.get("geometry") or {}).get("coordinates") or []
+            if len(coords) < 2 or not isinstance(coords[0], (int, float)):
+                continue
+            plon, plat = coords[0], coords[1]
+        elements.append(
+            {
+                "lat": plat,
+                "lon": plon,
+                "tags": {
+                    "name": p.get("name") or "",
+                    "opening_hours": p.get("opening_hours") or "",
+                    "_address": p.get("address_line2") or p.get("formatted") or "",
+                },
+            }
+        )
+    return elements
+
+
+def geoapify_elements(kind: str, lat: float, lon: float) -> tuple[list[dict], int] | None:
+    """Résultats via Geoapify, ou None si indisponible (pas de clé, quota atteint, erreur)."""
+    if not GEOAPIFY_KEY or not geoapify_budget_ok():
+        return None
+    filtered = GEOAPIFY_TYPES[kind][1] is not None
+    # Sans filtre par étiquette, 20 résultats suffisent (1 crédit). Avec filtre, on demande le maximum (500) :
+    # les bornes à verre, très nombreuses, saturent sinon la liste avant d'atteindre le textile ou les piles.
+    passes = ((RADII_M[0], 500), (RADII_M[1], 500)) if filtered else ((RADII_M[0], 20), (RADII_M[1], 20))
+    try:
+        elements: list[dict] = []
+        radius = RADII_M[0]
+        for radius, limit in passes:
+            elements = geoapify_query(kind, lat, lon, radius, limit)
+            if elements:
+                break
+        return elements, radius
+    except (httpx.HTTPError, GeoapifyError, ValueError, KeyError, TypeError) as e:
+        detail = f" ({e})" if isinstance(e, GeoapifyError) else ""
+        print(f"[geoapify] échec : {type(e).__name__}{detail}, bascule sur Overpass")
+        return None
+
+
+def overpass_elements(kind: str, lat: float, lon: float) -> tuple[list[dict], int]:
+    elements: list[dict] = []
+    radius = RADII_M[0]
+    for radius in RADII_M:
+        elements = overpass(build_query(COLLECTE_TYPES[kind]["filters"], lat, lon, radius))
+        if elements:
+            break
+    return elements, radius
+
+
 def fetch_elements(kind: str, lat: float, lon: float) -> tuple[list[dict], int]:
     key = f"{kind}|{lat:.2f}|{lon:.2f}"
-    # Une seule requête Overpass à la fois : on ne martèle pas un serveur déjà saturé.
+    # Une seule requête à la fois : on ne martèle pas un service déjà saturé.
     with _geo_lock:
         hit = _geo_cache.get(key)
         if hit and time.time() - hit[0] < GEO_TTL:
             return hit[1], hit[2]
         try:
-            elements: list[dict] = []
-            radius = RADII_M[0]
-            for radius in RADII_M:
-                elements = overpass(build_query(COLLECTE_TYPES[kind]["filters"], lat, lon, radius))
-                if elements:
-                    break
+            result = geoapify_elements(kind, lat, lon)
+            if result is None:
+                result = overpass_elements(kind, lat, lon)
+            elements, radius = result
         except HTTPException:
-            if hit:  # serveurs saturés : un résultat un peu ancien vaut mieux que rien
+            if hit:  # tout est indisponible : un résultat un peu ancien vaut mieux que rien
                 return hit[1], hit[2]
             raise
         if len(_geo_cache) > 300:
@@ -324,6 +447,12 @@ def fetch_elements(kind: str, lat: float, lon: float) -> tuple[list[dict], int]:
         return elements, radius
 
 
+def build_points(elements: list[dict], spec: dict, lat: float, lon: float) -> list[dict]:
+    points = [p for p in (to_point(el, spec, lat, lon) for el in elements) if p]
+    points.sort(key=lambda p: p["distance_m"])
+    return points[:MAX_POINTS]
+
+
 def to_point(el: dict, spec: dict, lat: float, lon: float) -> dict | None:
     tags = el.get("tags", {})
     plat = el.get("lat", (el.get("center") or {}).get("lat"))
@@ -331,7 +460,7 @@ def to_point(el: dict, spec: dict, lat: float, lon: float) -> dict | None:
     if plat is None or plon is None:
         return None
     street = " ".join(filter(None, [tags.get("addr:housenumber"), tags.get("addr:street")]))
-    address = ", ".join(filter(None, [street, tags.get("addr:city", "")]))
+    address = tags.get("_address") or ", ".join(filter(None, [street, tags.get("addr:city", "")]))
     return {
         "nom": tags.get("name") or tags.get("operator") or spec["fallback"],
         "adresse": address,
@@ -355,7 +484,14 @@ class Search(BaseModel):
 
 @app.get("/api/health")
 def health():
-    return {"ok": True, "model": MODEL, "detail": DETAIL, "scans_today": _daily["count"]}
+    return {
+        "ok": True,
+        "model": MODEL,
+        "detail": DETAIL,
+        "scans_today": _daily["count"],
+        "geoapify": bool(GEOAPIFY_KEY),
+        "geoapify_credits_today": _geoapify_daily["count"],
+    }
 
 
 @app.post("/api/analyze")
@@ -410,6 +546,15 @@ def collecte(
     check_geo_limit(client_ip(request))
 
     elements, radius = fetch_elements(kind, lat, lon)
-    points = [p for p in (to_point(el, spec, lat, lon) for el in elements) if p]
-    points.sort(key=lambda p: p["distance_m"])
-    return {"type": kind, "label": spec["label"], "rayon_m": radius, "points": points[:MAX_POINTS]}
+    points = build_points(elements, spec, lat, lon)
+    label, note = spec["label"], ""
+
+    if not points and kind in FALLBACKS:
+        fb_kind, note = FALLBACKS[kind]
+        fb_elements, radius = fetch_elements(fb_kind, lat, lon)
+        points = build_points(fb_elements, COLLECTE_TYPES[fb_kind], lat, lon)
+        label = COLLECTE_TYPES[fb_kind]["label"]
+        if not points:
+            note = ""
+
+    return {"type": kind, "label": label, "note": note, "rayon_m": radius, "points": points}

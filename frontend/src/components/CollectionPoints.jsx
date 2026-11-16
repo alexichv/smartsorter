@@ -109,6 +109,7 @@ export default function CollectionPoints({ initialType = "piles", auto = false }
         {status === "done" && data && (
           <>
             {current?.note && <p className="mb-3">{current.note}</p>}
+            {data.note && <p className="mb-3 font-medium">{data.note}</p>}
             {data.rayon_m > 3000 && data.points.length > 0 && (
               <p className="mb-3 text-sm text-ink/70">Rien à moins de 3 km : résultats jusqu'à 10 km.</p>
             )}
@@ -146,7 +147,7 @@ export default function CollectionPoints({ initialType = "piles", auto = false }
       </div>
 
       <p className="mt-8 text-xs text-ink/60">
-        Données © contributeurs OpenStreetMap. Ta position sert uniquement à cette recherche et n'est pas enregistrée.
+        Données © contributeurs OpenStreetMap, via Geoapify. Ta position sert uniquement à cette recherche et n'est pas enregistrée.
       </p>
     </div>
   );

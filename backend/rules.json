@@ -4,7 +4,7 @@
       "label": "Bac jaune",
       "couleur": "#F5C400",
       "valorise": true,
-      "description": "Emballages en plastique, métal et carton, briques alimentaires, papiers. Vides, inutile de les laver."
+      "description": "Emballages en plastique, métal et carton, briques alimentaires, papiers. Vides, inutile de les laver. Tous les papiers vont dans le bac jaune, même froissés ou aggraphés : feuilles, cahier, journeaux, magazines, courriers, enveloppes. Seuls les papiers gras, mouillés ou très souillés (nourriture) vont dans le bac gris"
     },
     "verre": {
       "label": "Bac à verre",
